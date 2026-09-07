@@ -4,25 +4,61 @@ export interface ActiveSession extends VisitSession {
   tabId: number;
 }
 
-const sessions = new Map<number, ActiveSession>();
+const ACTIVE_SESSIONS_KEY = "activeSessions";
+const ACTIVE_TAB_KEY = "activeTabId";
 
-let activeTabId: number | null = null;
+async function getStoredSessions(): Promise<
+  Record<number, ActiveSession>
+> {
+  const result = await chrome.storage.local.get(
+    ACTIVE_SESSIONS_KEY
+  );
 
-export function setActiveTab(tabId: number): void {
-  activeTabId = tabId;
+  return (
+    result[ACTIVE_SESSIONS_KEY] as
+      | Record<number, ActiveSession>
+      | undefined
+  ) ?? {};
 }
 
-export function getActiveTabId(): number | null {
-  return activeTabId;
+async function setStoredSessions(
+  sessions: Record<number, ActiveSession>
+): Promise<void> {
+  await chrome.storage.local.set({
+    [ACTIVE_SESSIONS_KEY]: sessions,
+  });
 }
 
-export function startSession(
+export async function setActiveTab(
+  tabId: number
+): Promise<void> {
+  await chrome.storage.local.set({
+    [ACTIVE_TAB_KEY]: tabId,
+  });
+}
+
+export async function getActiveTabId(): Promise<
+  number | null
+> {
+  const result = await chrome.storage.local.get(
+    ACTIVE_TAB_KEY
+  );
+
+  return (
+    (result[ACTIVE_TAB_KEY] as
+      | number
+      | undefined) ?? null
+  );
+}
+
+export async function startSession(
   tabId: number,
   domain: string,
   websiteName: string,
   category: VisitSession["category"]
-): ActiveSession {
-  const now = Date.now();
+): Promise<ActiveSession> {
+  const sessions =
+    await getStoredSessions();
 
   const session: ActiveSession = {
     id: crypto.randomUUID(),
@@ -30,11 +66,13 @@ export function startSession(
     domain,
     websiteName,
     category,
-    startedAt: now,
+    startedAt: Date.now(),
     endedAt: null,
   };
 
-  sessions.set(tabId, session);
+  sessions[tabId] = session;
+
+  await setStoredSessions(sessions);
 
   console.log("🟢 Session started:", {
     tabId,
@@ -46,10 +84,22 @@ export function startSession(
   return session;
 }
 
-export function endSession(
+export async function getSession(
   tabId: number
-): ActiveSession | null {
-  const session = sessions.get(tabId);
+): Promise<ActiveSession | null> {
+  const sessions =
+    await getStoredSessions();
+
+  return sessions[tabId] ?? null;
+}
+
+export async function endSession(
+  tabId: number
+): Promise<ActiveSession | null> {
+  const sessions =
+    await getStoredSessions();
+
+  const session = sessions[tabId];
 
   if (!session) {
     return null;
@@ -57,7 +107,9 @@ export function endSession(
 
   session.endedAt = Date.now();
 
-  sessions.delete(tabId);
+  delete sessions[tabId];
+
+  await setStoredSessions(sessions);
 
   console.log("🔴 Session ended:", {
     tabId,
@@ -70,19 +122,19 @@ export function endSession(
   return session;
 }
 
-export function getSession(
+export async function removeTab(
   tabId: number
-): ActiveSession | null {
-  return sessions.get(tabId) ?? null;
-}
+): Promise<ActiveSession | null> {
+  const session =
+    await endSession(tabId);
 
-export function removeTab(
-  tabId: number
-): ActiveSession | null {
-  const session = endSession(tabId);
+  const activeTabId =
+    await getActiveTabId();
 
   if (activeTabId === tabId) {
-    activeTabId = null;
+    await chrome.storage.local.remove(
+      ACTIVE_TAB_KEY
+    );
   }
 
   return session;

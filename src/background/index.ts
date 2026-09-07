@@ -1,7 +1,5 @@
 import { classifyWebsite } from "../category/classifier";
 import { saveVisit } from "../storage/activityStore";
-
-
 import {
   endSession,
   getActiveTabId,
@@ -10,6 +8,9 @@ import {
   setActiveTab,
   startSession,
 } from "./sessionTracker";
+import {
+  isTrackingEnabled,
+} from "../storage/trackingState";
 
 function detectDomain(
   url?: string
@@ -40,7 +41,8 @@ function detectDomain(
 async function saveEndedSession(
   tabId: number
 ): Promise<void> {
-  const session = endSession(tabId);
+  const session =
+    await endSession(tabId);
 
   if (session) {
     await saveVisit(session);
@@ -51,6 +53,20 @@ async function handleWebsite(
   tabId: number,
   url?: string
 ): Promise<void> {
+  // IMPORTANT:
+  // Never track anything while tracking is paused.
+  const trackingEnabled =
+    await isTrackingEnabled();
+
+  if (!trackingEnabled) {
+    console.log(
+      "⏸️ Tracking paused. Ignoring:",
+      url
+    );
+
+    return;
+  }
+
   const domain = detectDomain(url);
 
   if (!domain) {
@@ -61,11 +77,16 @@ async function handleWebsite(
     return;
   }
 
-  const website = classifyWebsite(domain);
-  const currentSession = getSession(tabId);
+  const website =
+    classifyWebsite(domain);
 
-  // Same website in the same tab.
-  if (currentSession?.domain === domain) {
+  const currentSession =
+    await getSession(tabId);
+
+  // Same website in same tab = same visit.
+  if (
+    currentSession?.domain === domain
+  ) {
     console.log(
       "↔️ Same session:",
       domain
@@ -74,17 +95,17 @@ async function handleWebsite(
     return;
   }
 
-  // The tab navigated to another website.
+  // End previous website session.
   if (currentSession) {
     await saveEndedSession(tabId);
   }
 
-  // Start the new website session.
-  // The session starts only when this tab becomes active.
-  if (
-    getActiveTabId() === tabId
-  ) {
-    startSession(
+  const activeTabId =
+    await getActiveTabId();
+
+  // Only track the currently active tab.
+  if (activeTabId === tabId) {
+    await startSession(
       tabId,
       domain,
       website.name,
@@ -97,14 +118,32 @@ console.log(
   "🚀 Digital Footprint background service started"
 );
 
-// User switches tabs.
+// =====================================================
+// TAB ACTIVATION
+// =====================================================
+
 chrome.tabs.onActivated.addListener(
   async (activeInfo) => {
     try {
-      const previousTabId =
-        getActiveTabId();
+      const trackingEnabled =
+        await isTrackingEnabled();
 
-      // End the previous active tab's session.
+      // If paused, do not start a new session.
+      if (!trackingEnabled) {
+        console.log(
+          "⏸️ Tracking paused. Tab activation ignored."
+        );
+
+        await setActiveTab(
+          activeInfo.tabId
+        );
+
+        return;
+      }
+
+      const previousTabId =
+        await getActiveTabId();
+
       if (
         previousTabId !== null &&
         previousTabId !== activeInfo.tabId
@@ -114,14 +153,14 @@ chrome.tabs.onActivated.addListener(
         );
       }
 
-      // Mark new tab as active.
-      setActiveTab(
+      await setActiveTab(
         activeInfo.tabId
       );
 
-      const tab = await chrome.tabs.get(
-        activeInfo.tabId
-      );
+      const tab =
+        await chrome.tabs.get(
+          activeInfo.tabId
+        );
 
       await handleWebsite(
         activeInfo.tabId,
@@ -136,7 +175,10 @@ chrome.tabs.onActivated.addListener(
   }
 );
 
-// User navigates inside a tab.
+// =====================================================
+// PAGE NAVIGATION / LOAD
+// =====================================================
+
 chrome.tabs.onUpdated.addListener(
   async (
     tabId,
@@ -144,32 +186,69 @@ chrome.tabs.onUpdated.addListener(
     tab
   ) => {
     if (
-      changeInfo.status === "complete"
+      changeInfo.status !== "complete"
     ) {
-      await handleWebsite(
-        tabId,
+      return;
+    }
+
+    const trackingEnabled =
+      await isTrackingEnabled();
+
+    if (!trackingEnabled) {
+      console.log(
+        "⏸️ Tracking paused. Page update ignored:",
         tab.url
+      );
+
+      return;
+    }
+
+    await handleWebsite(
+      tabId,
+      tab.url
+    );
+  }
+);
+
+// =====================================================
+// TAB CLOSED
+// =====================================================
+
+chrome.tabs.onRemoved.addListener(
+  async (tabId) => {
+    try {
+      const session =
+        await removeTab(tabId);
+
+      if (session) {
+        await saveVisit(session);
+      }
+    } catch (error) {
+      console.error(
+        "Failed to save closed-tab session:",
+        error
       );
     }
   }
 );
 
-// User closes a tab.
-chrome.tabs.onRemoved.addListener(
-  async (tabId) => {
-    const session =
-      removeTab(tabId);
+// =====================================================
+// RECOVER ACTIVE TAB AFTER SERVICE WORKER RESTART
+// =====================================================
 
-    if (session) {
-      await saveVisit(session);
-    }
-  }
-);
-
-// Recover the currently active tab
-// when the service worker starts.
 async function initializeActiveTab(): Promise<void> {
   try {
+    const trackingEnabled =
+      await isTrackingEnabled();
+
+    if (!trackingEnabled) {
+      console.log(
+        "⏸️ Tracking paused. Initialization skipped."
+      );
+
+      return;
+    }
+
     const tabs =
       await chrome.tabs.query({
         active: true,
@@ -182,7 +261,9 @@ async function initializeActiveTab(): Promise<void> {
       return;
     }
 
-    setActiveTab(activeTab.id);
+    await setActiveTab(
+      activeTab.id
+    );
 
     await handleWebsite(
       activeTab.id,
@@ -195,5 +276,74 @@ async function initializeActiveTab(): Promise<void> {
     );
   }
 }
+
+// =====================================================
+// TRACKING STATE CHANGES
+// =====================================================
+
+chrome.storage.onChanged.addListener(
+  async (changes, areaName) => {
+    if (
+      areaName !== "local" ||
+      !changes.trackingEnabled
+    ) {
+      return;
+    }
+
+    const newValue =
+      changes.trackingEnabled.newValue;
+
+    console.log(
+      "🔄 Tracking state changed:",
+      newValue
+    );
+
+    // Tracking paused.
+    if (newValue === false) {
+      const activeTabId =
+        await getActiveTabId();
+
+      if (activeTabId !== null) {
+        await saveEndedSession(
+          activeTabId
+        );
+      }
+
+      console.log(
+        "⏸️ Tracking paused successfully"
+      );
+
+      return;
+    }
+
+    // Tracking resumed.
+    if (newValue === true) {
+      console.log(
+        "▶️ Tracking resumed"
+      );
+
+      const tabs =
+        await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+
+      const activeTab = tabs[0];
+
+      if (!activeTab?.id) {
+        return;
+      }
+
+      await setActiveTab(
+        activeTab.id
+      );
+
+      await handleWebsite(
+        activeTab.id,
+        activeTab.url
+      );
+    }
+  }
+);
 
 void initializeActiveTab();
