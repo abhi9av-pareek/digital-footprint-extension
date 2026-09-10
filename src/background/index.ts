@@ -59,10 +59,7 @@ async function handleWebsite(
     await isTrackingEnabled();
 
   if (!trackingEnabled) {
-    console.log(
-      "⏸️ Tracking paused. Ignoring:",
-      url
-    );
+
 
     return;
   }
@@ -87,10 +84,7 @@ async function handleWebsite(
   if (
     currentSession?.domain === domain
   ) {
-    console.log(
-      "↔️ Same session:",
-      domain
-    );
+
 
     return;
   }
@@ -114,9 +108,7 @@ async function handleWebsite(
   }
 }
 
-console.log(
-  "🚀 Digital Footprint background service started"
-);
+
 
 // =====================================================
 // TAB ACTIVATION
@@ -130,9 +122,7 @@ chrome.tabs.onActivated.addListener(
 
       // If paused, do not start a new session.
       if (!trackingEnabled) {
-        console.log(
-          "⏸️ Tracking paused. Tab activation ignored."
-        );
+
 
         await setActiveTab(
           activeInfo.tabId
@@ -195,10 +185,7 @@ chrome.tabs.onUpdated.addListener(
       await isTrackingEnabled();
 
     if (!trackingEnabled) {
-      console.log(
-        "⏸️ Tracking paused. Page update ignored:",
-        tab.url
-      );
+
 
       return;
     }
@@ -242,9 +229,7 @@ async function initializeActiveTab(): Promise<void> {
       await isTrackingEnabled();
 
     if (!trackingEnabled) {
-      console.log(
-        "⏸️ Tracking paused. Initialization skipped."
-      );
+
 
       return;
     }
@@ -293,10 +278,7 @@ chrome.storage.onChanged.addListener(
     const newValue =
       changes.trackingEnabled.newValue;
 
-    console.log(
-      "🔄 Tracking state changed:",
-      newValue
-    );
+
 
     // Tracking paused.
     if (newValue === false) {
@@ -309,18 +291,14 @@ chrome.storage.onChanged.addListener(
         );
       }
 
-      console.log(
-        "⏸️ Tracking paused successfully"
-      );
+
 
       return;
     }
 
     // Tracking resumed.
     if (newValue === true) {
-      console.log(
-        "▶️ Tracking resumed"
-      );
+
 
       const tabs =
         await chrome.tabs.query({

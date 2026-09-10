@@ -18,9 +18,5 @@ export async function setTrackingEnabled(
     [TRACKING_STATE_KEY]: enabled,
   });
 
-  console.log(
-    enabled
-      ? "▶️ Tracking enabled"
-      : "⏸️ Tracking disabled"
-  );
+
 }

@@ -22,9 +22,7 @@ export async function clearAllHistory(): Promise<void> {
     "activeTabId",
   ]);
 
-  console.log(
-    "🗑️ All browsing history and active sessions cleared"
-  );
+
 }
 
 export async function getStorageSummary(): Promise<{

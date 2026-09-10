@@ -5,8 +5,7 @@
   "description": "Track your digital footprint and browsing streaks.",
   "permissions": [
     "tabs",
-    "storage",
-    "alarms"
+    "storage"
   ],
   "background": {
     "service_worker": "background.js",

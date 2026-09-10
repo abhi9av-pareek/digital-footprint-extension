@@ -74,12 +74,7 @@ export async function startSession(
 
   await setStoredSessions(sessions);
 
-  console.log("🟢 Session started:", {
-    tabId,
-    website: websiteName,
-    domain,
-    category,
-  });
+
 
   return session;
 }
@@ -111,13 +106,6 @@ export async function endSession(
 
   await setStoredSessions(sessions);
 
-  console.log("🔴 Session ended:", {
-    tabId,
-    website: session.websiteName,
-    domain: session.domain,
-    duration:
-      session.endedAt - session.startedAt,
-  });
 
   return session;
 }

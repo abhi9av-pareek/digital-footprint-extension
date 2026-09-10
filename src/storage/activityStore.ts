@@ -96,5 +96,5 @@ export async function saveVisit(
   }
   await setStorageData(storage);
 
-  console.log("💾 Visit saved:", visit);
+
 }
